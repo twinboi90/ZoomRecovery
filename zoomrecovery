@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# Handle --version flag
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then
+  echo "zoomrecovery VERSION_PLACEHOLDER"
+  exit 0
+fi
+
+# Check if running as root
+if [[ "$EUID" -ne 0 ]]; then
+  echo "[!] Some functions (e.g., spoofing MAC address, Wi-Fi control) require root."
+  echo "[!] Please run with sudo if you want full functionality:"
+  echo "    sudo zoomrecovery"
+  echo ""
+  echo "[*] Continuing with partial functionality (Zoom data cleanup)..."
+  PARTIAL_MODE=true
+else
+  PARTIAL_MODE=false
+fi
+
+# Detect Wi-Fi interface
+WIFI_INTERFACE=$(networksetup -listallhardwareports | awk '/Wi-Fi|AirPort/{getline; print $2}')
+
+if [[ -z "$WIFI_INTERFACE" ]]; then
+  echo "[!] Could not detect a Wi-Fi interface. Exiting."
+  exit 1
+else
+  echo "[*] Detected Wi-Fi interface: $WIFI_INTERFACE"
+fi
+
+# Close Zoom.us if open
+osascript -e 'quit app "zoom.us"'
+sleep 2
+
+# Turn off Wi-Fi (if running with sudo)
+if [[ "$PARTIAL_MODE" = false ]]; then
+  echo "[*] Turning off Wi-Fi ($WIFI_INTERFACE)..."
+  networksetup -setairportpower "$WIFI_INTERFACE" off
+  sleep 1
+else
+  echo "[!] Skipping Wi-Fi disable (requires sudo)"
+fi
+
+# Spoof MAC address (if running with sudo)
+if [[ "$PARTIAL_MODE" = false ]]; then
+  echo "[*] Spoofing MAC address on $WIFI_INTERFACE..."
+  /opt/homebrew/bin/spoof-mac randomize "$WIFI_INTERFACE"
+  sleep 1
+else
+  echo "[!] Skipping MAC spoofing (requires sudo)"
+fi
+
+# Wipe specific Zoom .db files
+ZOOMDATA="$HOME/Library/Application Support/zoom.us/data"
+FILES=("zoomus.zmdb.default.noenc.rlock.db" "zoomus.enc.db" "zoommeeting.enc.db")
+
+for file in "${FILES[@]}"; do
+  fullpath="$ZOOMDATA/$file"
+  if [ -f "$fullpath" ]; then
+    : > "$fullpath"
+    echo "Wiped $fullpath"
+  else
+    echo "File not found: $fullpath"
+  fi
+done
+
+# Turn Wi-Fi back on (if running with sudo)
+if [[ "$PARTIAL_MODE" = false ]]; then
+  echo "[*] Turning Wi-Fi back on..."
+  networksetup -setairportpower "$WIFI_INTERFACE" on
+  sleep 1
+else
+  echo "[!] Skipping Wi-Fi re-enable (requires sudo)"
+fi
+
+# Reopen Zoom
+echo "[*] Opening Zoom..."
+open -a "zoom.us"
+
+echo "[✔] Zoom 1132 fix complete."
