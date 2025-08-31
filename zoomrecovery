@@ -145,13 +145,13 @@ else
 fi
 
 # Ensure $HOME points to the logged-in user’s home when run under sudo
-if [[ "$EUID" -eq 0 && -n "$SUDO_USER" ]]; then
-  export HOME="$(eval echo "~$SUDO_USER")"
+if [[ "$EUID" -eq 0 && -n "$USER" ]]; then
+  export HOME="$(eval echo "~$USER")"
 fi
 
 # Wipe specific Zoom .db files (exact block as requested)
 ZOOMDATA="$HOME/Library/Application Support/zoom.us/data"
-FILES=("zoomus.zmdb.default.noenc.rlock.db" "zoomus.enc.db" "zoommeeting.enc.db")
+FILES=("zoomus.zmdb.default.noenc.rlock.db" "zoomus.enc.db" "zoommeeting.enc.db" "zoom_conf_local_asr.enc.db" "zoomus.zmdb.kvs.enc.db" "viper.ini")
 
 for file in "${FILES[@]}"; do
   fullpath="$ZOOMDATA/$file"
