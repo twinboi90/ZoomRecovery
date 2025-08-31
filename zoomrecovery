@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# Determine the intended user and home dir even when running via sudo
+TARGET_USER="${SUDO_USER:-$USER}"
+
+# macOS-safe way to expand a user's home
+TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+
+# Fallback to the console session user if TARGET_HOME is empty or invalid
+if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
+  CONSOLE_USER="$(stat -f %Su /dev/console)"
+  TARGET_USER="${CONSOLE_USER}"
+  TARGET_HOME="$(eval echo "~${CONSOLE_USER}")"
+fi
+
 # Handle --version flag
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
   echo "zoomrecovery VERSION_PLACEHOLDER"
@@ -145,16 +158,19 @@ else
 fi
 
 # Ensure $HOME points to the logged-in user’s home when run under sudo
-if [[ "$EUID" -eq 0 && -n "$USER" ]]; then
-  export HOME="$(eval echo "~$USER")"
+if [ -z "${TARGET_HOME}" ] || [ ! -d "${TARGET_HOME}" ]; then
+  CONSOLE_USER="$(stat -f %Su /dev/console)"
+  TARGET_HOME="$(eval echo "~${CONSOLE_USER}")"
 fi
 
+echo "Acting on user: $TARGET_USER"
+
 # Wipe specific Zoom .db files (exact block as requested)
-ZOOMDATA="$HOME/Library/Application Support/zoom.us/data"
+ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
 FILES=("zoomus.zmdb.default.noenc.rlock.db" "zoomus.enc.db" "zoommeeting.enc.db" "zoom_conf_local_asr.enc.db" "zoomus.zmdb.kvs.enc.db" "viper.ini")
 
 for file in "${FILES[@]}"; do
-  fullpath="$ZOOMDATA/$file"
+  fullpath="${ZOOMDATA}/$file"
   if [ -f "$fullpath" ]; then
     : > "$fullpath"
     echo "Wiped $fullpath"
