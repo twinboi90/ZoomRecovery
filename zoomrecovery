@@ -1,10 +1,13 @@
-#!/bin/bash
+#!/bin/env bash
 
 # Determine the intended user and home dir even when running via sudo
 TARGET_USER="${SUDO_USER:-$USER}"
+CONSOLE_USER="$(stat -f %Su /dev/console)"
+TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+CONSOLE_HOME="$(eval echo "~${CONSOLE_USER}")"
 
 # macOS-safe way to expand a user's home
-TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+export TARGET_USER TARGET_HOME CONSOLE_USER CONSOLE_HOME
 
 # Fallback to the console session user if TARGET_HOME is empty or invalid
 if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
@@ -20,12 +23,11 @@ if [[ "$1" == "--version" || "$1" == "-v" ]]; then
 fi
 
 # Root check
-if [[ "$EUID" -ne 0 ]]; then
-  echo "[!] Some functions (e.g., spoofing MAC address, interface control) require root."
-  echo "[!] Please run with sudo if you want full functionality:"
-  echo "    sudo zoomrecovery"
-  echo ""
-  echo "[*] Continuing with partial functionality (Zoom data cleanup)..."
+if [[ $EUID -ne 0 ]]; then
+  if sudo -E -- "$0" "$@"; then
+    exit 0
+  fi
+  echo "[!] sudo failed; continuing with partial functionality (Zoom data cleanup)…"
   PARTIAL_MODE=true
 else
   PARTIAL_MODE=false
@@ -167,19 +169,24 @@ echo "Acting on user: $TARGET_USER"
 
 # Wipe specific Zoom .db files (exact block as requested)
 ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
-FILES=("zoomus.zmdb.default.noenc.rlock.db" "zoomus.enc.db" "zoommeeting.enc.db" "zoom_conf_local_asr.enc.db" "zoomus.zmdb.kvs.enc.db" "viper.ini")
+FILES=("*enc.db" "viper.ini")
+
+# Enable nullglob so unmatched globs expand to nothing
+shopt -s nullglob
 
 for file in "${FILES[@]}"; do
-  fullpath="${ZOOMDATA}/$file"
-  if [ -f "$fullpath" ]; then
-    : > "$fullpath"
-    echo "Wiped $fullpath"
-  else
-    echo "File not found: $fullpath"
-  fi
+  for match in "$ZOOMDATA"/$file; do
+    if [ -f "$match" ]; then
+      : > "$match"
+      echo "Wiped $match"
+    fi
+  done
 done
 
-# Reopen Zoom
+# Restore default globbing behavior
+shopt -u nullglob
+
+#Reopen Zoom
 echo "[*] Opening Zoom..."
 open -a "zoom.us"
 
