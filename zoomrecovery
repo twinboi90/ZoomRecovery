@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/bin/bash
 
 # Determine the intended user and home dir even when running via sudo
 TARGET_USER="${SUDO_USER:-$USER}"
