@@ -16,12 +16,6 @@ if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
   TARGET_HOME="$(eval echo "~${CONSOLE_USER}")"
 fi
 
-# Handle --version flag
-if [[ "$1" == "--version" || "$1" == "-v" ]]; then
-  echo "zoomrecovery VERSION_PLACEHOLDER"
-  exit 0
-fi
-
 # Root check
 if [[ $EUID -ne 0 ]]; then
   if sudo -E -- "$0" "$@"; then
