@@ -18,8 +18,9 @@ if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
 fi
 
 # Handle --version flag
+VERSION="VERSION_PLACEHOLDER"
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
-  echo "zoomrecovery VERSION_PLACEHOLDER"
+  echo "zoomrecovery $VERSION"
   exit 0
 fi
 
