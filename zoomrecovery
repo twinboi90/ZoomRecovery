@@ -39,8 +39,8 @@ else
   echo "[*] Detected Wi-Fi interface: $WIFI_INTERFACE"
 fi
 
-# Close Zoom if open
-osascript -e 'quit app "zoom.us"'
+# Close Zoom if open — hard kill all Zoom processes including helpers
+pkill -9 -f zoom 2>/dev/null || true
 sleep 2
 
 # Helper: renew DHCP on an interface
@@ -152,7 +152,7 @@ fi
 echo "Acting on user: $TARGET_USER"
 
 ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
-FILES=("*enc.db" "viper.ini")
+FILES=("*.enc.db" "viper.ini")
 
 # Enable nullglob so unmatched globs expand to nothing
 shopt -s nullglob
