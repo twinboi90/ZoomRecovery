@@ -160,8 +160,35 @@ shopt -s nullglob
 for file in "${FILES[@]}"; do
   for match in "$ZOOMDATA"/$file; do
     if [ -f "$match" ]; then
+
+      # Check for immutable flag
+      IMMUTABLE=false
+      if ls -lO "$match" 2>/dev/null | awk '{print $5}' | grep -qw "uchg"; then
+        echo "[*] $match is locked (uchg); temporarily unlocking..."
+        chflags nouchg "$match"
+        IMMUTABLE=true
+      fi
+
+      # Save and fix permissions if not writable
+      ORIGINAL_PERMS=$(stat -f "%Lp" "$match")
+      if [ ! -w "$match" ]; then
+        echo "[*] $match is not writable (perms: $ORIGINAL_PERMS); temporarily fixing..."
+        chmod u+w "$match"
+      fi
+
+      # Wipe the file
       : > "$match"
-      echo "Wiped $match"
+      echo "[✔] Wiped $match"
+
+      # Restore permissions
+      chmod "$ORIGINAL_PERMS" "$match"
+
+      # Re-apply immutable flag if it was set
+      if $IMMUTABLE; then
+        chflags uchg "$match"
+        echo "[*] Re-applied lock on $match"
+      fi
+
     fi
   done
 done
