@@ -1,0 +1,24 @@
+name: Trigger Homebrew Formula Update
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-tap-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger homebrew-zoomrecovery formula update
+        run: |
+          VERSION="${{ github.ref_name }}"
+          
+          # Trigger the workflow in homebrew-zoomrecovery tap
+          gh workflow run update-formula.yml \
+            -f version="$VERSION" \
+            -R twinboi90/homebrew-zoomrecovery
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
