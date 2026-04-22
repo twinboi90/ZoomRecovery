@@ -17,7 +17,7 @@ This approach is more effective than uninstalling Zoom, as it targets the root c
 ### Homebrew
 
 ```bash
-brew tap twinboi90/zoomrecovery
+brew tap twinboi90/tap
 brew install zoomrecovery
 ```
 
@@ -25,12 +25,12 @@ brew install zoomrecovery
 
 Download the latest `.pkg` installer from [GitHub Releases](https://github.com/twinboi90/ZoomRecovery/releases) and double-click to install.
 
-Or clone and run directly:
+Or clone and run install.sh directly:
 
 ```bash
 git clone https://github.com/twinboi90/ZoomRecovery.git
 cd ZoomRecovery
-./zoomrecovery
+chmod +x install.sh && ./install.sh
 ```
 
 ## Usage
