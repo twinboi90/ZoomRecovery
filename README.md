@@ -14,10 +14,27 @@ This approach is more effective than uninstalling Zoom, as it targets the root c
 
 ## Installation
 
-### Homebrew
+### Homebrew (Stable)
 
 ```bash
 brew tap twinboi90/tap
+brew install zoomrecovery
+```
+
+### Homebrew (Development Version)
+
+⚠️ **Beta Testing Only** — The development version includes new features and fixes but may be less stable than the current release. For Zoom 7.0.0 compatibility testing and security-hardened builds, install `zoomrecovery-dev`:
+
+```bash
+brew tap twinboi90/tap
+brew install zoomrecovery-dev
+```
+
+**Note:** Only install the dev version if you're willing to test pre-release software and report issues. See [TESTING_GUIDE.md](https://github.com/twinboi90/ZoomRecovery/blob/testing/beta/v1.2.0-updates/TESTING_GUIDE.md) for detailed testing instructions and how to report feedback.
+
+To switch back to the stable version:
+```bash
+brew uninstall zoomrecovery-dev
 brew install zoomrecovery
 ```
 
