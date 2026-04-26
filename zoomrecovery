@@ -2,24 +2,32 @@
 
 # Determine the intended user and home dir even when running via sudo
 TARGET_USER="${SUDO_USER:-$USER}"
-CONSOLE_USER="$(stat -f %Su /dev/console)"
-TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+
+# Safer home directory expansion using dscl (avoids eval security issues)
+TARGET_HOME=$(dscl . -read "/Users/$TARGET_USER" NFSHomeDirectory 2>/dev/null | awk '{print $NF}')
+if [[ -z "$TARGET_HOME" ]]; then
+  # Fallback to tilde expansion if dscl fails (for local accounts)
+  TARGET_HOME="$(cd ~"$TARGET_USER" 2>/dev/null && pwd)" || TARGET_HOME=""
+fi
 export TARGET_USER TARGET_HOME
 
 # Fallback to the console session user if TARGET_HOME is empty or invalid
 if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
+  CONSOLE_USER="$(stat -f %Su /dev/console)"
   TARGET_USER="${CONSOLE_USER}"
-  TARGET_HOME="$(eval echo "~${CONSOLE_USER}")"
+  TARGET_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $NF}')
+  if [[ -z "$TARGET_HOME" ]]; then
+    TARGET_HOME="$(cd ~"$CONSOLE_USER" 2>/dev/null && pwd)" || TARGET_HOME=""
+  fi
 fi
 
 # Handle --version flag
-VERSION="VERSION_PLACEHOLDER"
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
-  echo "zoomrecovery $VERSION"
+  echo "zoomrecovery VERSION_PLACEHOLDER"
   exit 0
 fi
 
-# Escalate to root if needed
+# Root check
 if [[ $EUID -ne 0 ]]; then
   if sudo -E -- "$0" "$@"; then
     exit 0
@@ -30,47 +38,36 @@ else
   PARTIAL_MODE=false
 fi
 
-# Detect Wi-Fi interface
-WIFI_INTERFACE=$(networksetup -listallhardwareports | awk '/Wi-Fi|AirPort/{getline; print $2}')
-if [[ -z "$WIFI_INTERFACE" ]]; then
-  echo "[!] Could not detect a Wi-Fi interface. Exiting."
-  exit 1
+# Close Zoom.us if open
+if osascript -e 'quit app "zoom.us"' 2>/dev/null; then
+  echo "[✔] Zoom quit successfully"
+  sleep 2
 else
-  echo "[*] Detected Wi-Fi interface: $WIFI_INTERFACE"
+  echo "[*] Zoom not running or failed to quit; proceeding anyway..."
+  sleep 1
 fi
-
-# Close Zoom if open — hard kill all Zoom processes including helpers
-pkill -9 -f zoom 2>/dev/null || true
-sleep 2
 
 # Helper: renew DHCP on an interface
 renew_dhcp() {
   local ifc="$1"
-  networksetup -setdhcp "$ifc" >/dev/null 2>&1 || true
+  # Prefer networksetup where possible; fall back to ipconfig
+  if networksetup -listallhardwareports >/dev/null 2>&1; then
+    networksetup -setdhcp "$ifc" >/dev/null 2>&1 || true
+  fi
   ipconfig set "$ifc" DHCP >/dev/null 2>&1 || true
 }
 
-# Helper: generate a valid locally-administered random MAC address
-random_mac() {
-  local suffix
-  suffix=$(openssl rand -hex 5 | sed 's/\(..\)/\1:/g; s/:$//')
-  echo "02:$suffix"
-}
-
-# ── MAC Spoofing ─────────────────────────────────────────────────────────────
+# Spoof MAC on all active physical interfaces (if root)
 if [[ "$PARTIAL_MODE" = false ]]; then
   echo "[*] Detecting active interfaces..."
 
   # Active set via SystemConfiguration
-  ACTIVE_IFACES=($(scutil --nwi 2>/dev/null \
-    | awk '/Network interfaces in use:/{for(i=5;i<=NF;i++)print $i}' \
-    | tr ' ' '\n' | sort -u))
+  ACTIVE_IFACES=($(scutil --nwi 2>/dev/null | awk '/Network interfaces in use:/{for(i=5;i<=NF;i++)print $i}' | tr ' ' '\n' | sort -u))
 
   # Fallback: interfaces reporting status active with an ether addr
   if [[ ${#ACTIVE_IFACES[@]} -eq 0 ]]; then
     while read -r ifc; do
-      if ifconfig "$ifc" 2>/dev/null | grep -q "status: active" \
-        && ifconfig "$ifc" | awk '/ether/ {found=1} END{exit !found}'; then
+      if ifconfig "$ifc" 2>/dev/null | grep -q "status: active" && ifconfig "$ifc" | awk '/ether/ {found=1} END{exit !found}'; then
         ACTIVE_IFACES+=("$ifc")
       fi
     done < <(ifconfig -l | tr ' ' '\n')
@@ -79,9 +76,7 @@ if [[ "$PARTIAL_MODE" = false ]]; then
   # Filter out virtual/loopback/tunnels
   FILTERED_IFACES=()
   for iface in "${ACTIVE_IFACES[@]}"; do
-    if [[ "$iface" == lo* || "$iface" == awdl* || "$iface" == utun* \
-       || "$iface" == llw* || "$iface" == bridge* || "$iface" == ap* \
-       || "$iface" == gif* || "$iface" == stf* ]]; then
+    if [[ "$iface" == lo* || "$iface" == awdl* || "$iface" == utun* || "$iface" == llw* || "$iface" == bridge* || "$iface" == ap* || "$iface" == gif* || "$iface" == stf* ]]; then
       echo "[*] Skipping virtual/loopback interface: $iface"
       continue
     fi
@@ -93,6 +88,15 @@ if [[ "$PARTIAL_MODE" = false ]]; then
   else
     echo "[*] Active physical interfaces: ${FILTERED_IFACES[*]}"
 
+    # Resolve spoof-mac if present
+    SPOOF_MAC_BIN="${SPOOF_MAC_BIN:-$(command -v spoof-mac || true)}"
+
+    # Validate spoof-mac binary is executable
+    if [[ -n "$SPOOF_MAC_BIN" && ! -x "$SPOOF_MAC_BIN" ]]; then
+      echo "[!] spoof-mac found but not executable: $SPOOF_MAC_BIN"
+      SPOOF_MAC_BIN=""
+    fi
+
     for iface in "${FILTERED_IFACES[@]}"; do
       CURRENT_MAC=$(ifconfig "$iface" 2>/dev/null | awk '/ether/ {print $2}')
       if [[ -z "$CURRENT_MAC" ]]; then
@@ -101,103 +105,153 @@ if [[ "$PARTIAL_MODE" = false ]]; then
       fi
       echo "[*] $iface is spoofable (Current MAC: $CURRENT_MAC)"
 
-      # Check if this is a Wi-Fi interface
-      IS_WIFI=false
+      # If Wi-Fi, power it off before changing the MAC
+      IS_WIFI="false"
+      # Heuristic: Wi-Fi is commonly en0; also check Hardware Port name
       if networksetup -listallhardwareports 2>/dev/null | awk -v ifc="$iface" '
           $0 ~ /^Hardware Port: Wi-Fi$/ {wifi=1}
           wifi && $0 ~ /^Device: / {dev=$2; if (dev==ifc) {print "yes"; exit}}
         ' | grep -q yes; then
-        IS_WIFI=true
+        IS_WIFI="true"
       fi
 
-      # Power down the interface before changing MAC
-      if $IS_WIFI; then
-        echo "[*] Detected Wi-Fi interface ($iface); powering off Wi-Fi to change MAC"
-        networksetup -setairportpower "Wi-Fi" off >/dev/null 2>&1 || ifconfig "$iface" down || true
+      if [[ "$IS_WIFI" == "true" ]]; then
+        echo "[*] Detected Wi-Fi interface ($iface); powering Wi-Fi off to change MAC"
+        # Try networksetup service name "Wi-Fi"; if unavailable, disassociate via airport
+        if ! networksetup -setairportpower "Wi-Fi" off >/dev/null 2>&1; then
+          /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -z >/dev/null 2>&1 || true
+          ifconfig "$iface" down || true
+        fi
       else
+        # Non-Wi-Fi: bring interface down first
         ifconfig "$iface" down || true
       fi
 
-      # Spoof the MAC
-      NEW_MAC=$(random_mac)
-      echo "[*] Trying manual spoof: $NEW_MAC on $iface"
-      if ifconfig "$iface" ether "$NEW_MAC"; then
-        echo "[✔] Spoofed $iface → $NEW_MAC"
-        changed=true
-      else
-        echo "[✘] MAC spoof failed on $iface"
-        changed=false
+      changed=false
+
+      # Try spoof-mac first if available
+      if [[ -n "$SPOOF_MAC_BIN" ]]; then
+        echo "[*] Trying spoof-mac on $iface..."
+        if "$SPOOF_MAC_BIN" randomize "$iface"; then
+          echo "[✔] Spoofed MAC on: $iface via spoof-mac"
+          changed=true
+        else
+          echo "[!] spoof-mac failed on: $iface; will try manual fallback"
+        fi
       fi
 
-      # Bring interface back up and renew DHCP
+      # Manual fallback if spoof-mac missing or failed
+      if [[ "$changed" != true ]]; then
+        RAND_SUFFIX=$(openssl rand -hex 5 | sed 's/\(..\)/\1:/g; s/:$//')
+        FALLBACK_MAC="02:$RAND_SUFFIX"
+        echo "[*] Trying manual spoof: $FALLBACK_MAC on $iface"
+        if ifconfig "$iface" ether "$FALLBACK_MAC"; then
+          echo "[✔] Manually spoofed $iface"
+          changed=true
+        else
+          echo "[✘] Manual spoof failed on $iface"
+        fi
+      fi
+
+      # Bring interface back up and renew DHCP if we changed anything
       if [[ "$changed" == true ]]; then
-        if $IS_WIFI; then
+        if [[ "$IS_WIFI" == "true" ]]; then
           echo "[*] Re-enabling Wi-Fi"
-          networksetup -setairportpower "Wi-Fi" on >/dev/null 2>&1 || ifconfig "$iface" up || true
+          if networksetup -setairportpower "Wi-Fi" on 2>/dev/null; then
+            sleep 2  # Wait for Wi-Fi to stabilize after MAC change
+            echo "[✔] Wi-Fi re-enabled"
+          else
+            ifconfig "$iface" up || true
+            sleep 1
+          fi
         else
           ifconfig "$iface" up || true
+          sleep 1
         fi
-        sleep 1
         echo "[*] Renewing DHCP on $iface"
         renew_dhcp "$iface"
         sleep 1
       else
+        # Ensure the interface isn't left down
         ifconfig "$iface" up >/dev/null 2>&1 || true
       fi
     done
   fi
+else
+  echo "[!] Skipping MAC spoofing (requires sudo)"
 fi
 
-# ── Zoom Data Wipe ───────────────────────────────────────────────────────────
-echo "Acting on user: $TARGET_USER"
+# Ensure $HOME points to the logged-in user’s home when run under sudo
+if [ -z "${TARGET_HOME}" ] || [ ! -d "${TARGET_HOME}" ]; then
+  CONSOLE_USER="$(stat -f %Su /dev/console)"
+  TARGET_USER="${CONSOLE_USER}"
+  TARGET_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk ‘{print $NF}’)
+  if [[ -z "$TARGET_HOME" ]]; then
+    TARGET_HOME="$(cd ~"$CONSOLE_USER" 2>/dev/null && pwd)" || TARGET_HOME=""
+  fi
+fi
 
+echo "[*] Acting on user: $TARGET_USER"
+
+# Wipe specific Zoom .db files
 ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
-FILES=("*.enc.db" "viper.ini")
 
-# Enable nullglob so unmatched globs expand to nothing
-shopt -s nullglob
+if [ ! -d "$ZOOMDATA" ]; then
+  echo "[!] Zoom data directory not found: $ZOOMDATA"
+else
+  echo "[*] Clearing Zoom cache and database files..."
+  FILES=("*enc.db" "viper.ini")
 
-for file in "${FILES[@]}"; do
-  for match in "$ZOOMDATA"/$file; do
-    if [ -f "$match" ]; then
+  # Enable nullglob so unmatched globs expand to nothing
+  shopt -s nullglob
 
-      # Check for immutable flag
-      IMMUTABLE=false
-      if ls -lO "$match" 2>/dev/null | awk '{print $5}' | grep -qw "uchg"; then
-        echo "[*] $match is locked (uchg); temporarily unlocking..."
-        chflags nouchg "$match"
-        IMMUTABLE=true
+  for file in "${FILES[@]}"; do
+    for match in "$ZOOMDATA"/$file; do
+      if [ -f "$match" ]; then
+        : > "$match"
+        echo "[✔] Wiped $(basename "$match")"
       fi
-
-      # Save and fix permissions if not writable
-      ORIGINAL_PERMS=$(stat -f "%Lp" "$match")
-      if [ ! -w "$match" ]; then
-        echo "[*] $match is not writable (perms: $ORIGINAL_PERMS); temporarily fixing..."
-        chmod u+w "$match"
-      fi
-
-      # Wipe the file
-      : > "$match"
-      echo "[✔] Wiped $match"
-
-      # Restore permissions
-      chmod "$ORIGINAL_PERMS" "$match"
-
-      # Re-apply immutable flag if it was set
-      if $IMMUTABLE; then
-        chflags uchg "$match"
-        echo "[*] Re-applied lock on $match"
-      fi
-
-    fi
+    done
   done
-done
 
-# Restore default globbing behavior
-shopt -u nullglob
+  # Restore default globbing behavior
+  shopt -u nullglob
+fi
 
-# ── Reopen Zoom ──────────────────────────────────────────────────────────────
+# Clear Zoom 7.0.0+ WebKit and HTTP authentication caches
+echo "[*] Clearing WebKit authentication caches (Zoom 7.0.0+)..."
+
+# UnifyWebView cache with authentication cookies
+if [ -d "${TARGET_HOME}/Library/Application Support/zoom.us/data/UnifyWebView_Cache/" ]; then
+  rm -rf "${TARGET_HOME}/Library/Application Support/zoom.us/data/UnifyWebView_Cache/"
+  echo "[✔] Cleared UnifyWebView_Cache"
+fi
+
+# HTTP storage (cookies and authentication data)
+rm -rf "${TARGET_HOME}/Library/HTTPStorages/us.zoom.xos" \
+       "${TARGET_HOME}/Library/HTTPStorages/us.zoom.xos.binarycookies" 2>/dev/null
+if [ $? -eq 0 ] || [ ! -d "${TARGET_HOME}/Library/HTTPStorages" ]; then
+  echo "[✔] Cleared HTTP storage"
+fi
+
+# WebKit website data (LocalStorage, IndexedDB, etc.)
+if [ -d "${TARGET_HOME}/Library/WebKit/us.zoom.xos/" ]; then
+  rm -rf "${TARGET_HOME}/Library/WebKit/us.zoom.xos/"
+  echo "[✔] Cleared WebKit website data"
+fi
+
+# System-level Zoom cache
+if [ -d "${TARGET_HOME}/Library/Caches/us.zoom.xos/" ]; then
+  rm -rf "${TARGET_HOME}/Library/Caches/us.zoom.xos/"
+  echo "[✔] Cleared system cache"
+fi
+
+# Reopen Zoom
 echo "[*] Opening Zoom..."
-open -a "zoom.us"
+if open -a "zoom.us" 2>/dev/null; then
+  echo "[✔] Zoom relaunched successfully"
+else
+  echo "[!] Failed to reopen Zoom; you may need to launch it manually"
+fi
 
-echo "[✔] Zoom recovery complete."
+echo "[✔] Zoom Error 1132 recovery complete."
