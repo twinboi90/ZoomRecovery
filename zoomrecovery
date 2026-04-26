@@ -181,11 +181,11 @@ else
   echo "[!] Skipping MAC spoofing (requires sudo)"
 fi
 
-# Ensure $HOME points to the logged-in user’s home when run under sudo
+# Ensure $HOME points to the logged-in user's home when run under sudo
 if [ -z "${TARGET_HOME}" ] || [ ! -d "${TARGET_HOME}" ]; then
   CONSOLE_USER="$(stat -f %Su /dev/console)"
   TARGET_USER="${CONSOLE_USER}"
-  TARGET_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk ‘{print $NF}’)
+  TARGET_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $NF}')
   if [[ -z "$TARGET_HOME" ]]; then
     TARGET_HOME="$(cd ~"$CONSOLE_USER" 2>/dev/null && pwd)" || TARGET_HOME=""
   fi
@@ -193,18 +193,25 @@ fi
 
 echo "[*] Acting on user: $TARGET_USER"
 
-# Wipe specific Zoom .db files
+# Define Zoom cache and data locations
 ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
+ZMCACHE="${TARGET_HOME}/Library/Caches/us.zoom.xos"
+ZMWEBKIT="${TARGET_HOME}/Library/WebKit/us.zoom.xos"
+ZMHTTPSTORAGE="${TARGET_HOME}/Library/HTTPStorages/us.zoom.xos"
+ZMUNIFYWEB="${TARGET_HOME}/Library/Application Support/zoom.us/data/UnifyWebView_Cache"
 
+# Wipe specific Zoom .db files and caches
 if [ ! -d "$ZOOMDATA" ]; then
   echo "[!] Zoom data directory not found: $ZOOMDATA"
 else
   echo "[*] Clearing Zoom cache and database files..."
   FILES=("*enc.db" "viper.ini")
+  DIRS=("$ZMUNIFYWEB" "$ZMCACHE" "$ZMWEBKIT" "$ZMHTTPSTORAGE")
 
   # Enable nullglob so unmatched globs expand to nothing
   shopt -s nullglob
 
+  # Clear files (truncate)
   for file in "${FILES[@]}"; do
     for match in "$ZOOMDATA"/$file; do
       if [ -f "$match" ]; then
@@ -216,35 +223,18 @@ else
 
   # Restore default globbing behavior
   shopt -u nullglob
+
+  # Clear directories (Zoom 7.0.0+ caches)
+  for dir in "${DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+      rm -rf "$dir"
+      echo "[✔] Cleared $(basename "$dir")"
+    fi
+  done
 fi
 
-# Clear Zoom 7.0.0+ WebKit and HTTP authentication caches
-echo "[*] Clearing WebKit authentication caches (Zoom 7.0.0+)..."
-
-# UnifyWebView cache with authentication cookies
-if [ -d "${TARGET_HOME}/Library/Application Support/zoom.us/data/UnifyWebView_Cache/" ]; then
-  rm -rf "${TARGET_HOME}/Library/Application Support/zoom.us/data/UnifyWebView_Cache/"
-  echo "[✔] Cleared UnifyWebView_Cache"
-fi
-
-# HTTP storage (cookies and authentication data)
-rm -rf "${TARGET_HOME}/Library/HTTPStorages/us.zoom.xos" \
-       "${TARGET_HOME}/Library/HTTPStorages/us.zoom.xos.binarycookies" 2>/dev/null
-if [ $? -eq 0 ] || [ ! -d "${TARGET_HOME}/Library/HTTPStorages" ]; then
-  echo "[✔] Cleared HTTP storage"
-fi
-
-# WebKit website data (LocalStorage, IndexedDB, etc.)
-if [ -d "${TARGET_HOME}/Library/WebKit/us.zoom.xos/" ]; then
-  rm -rf "${TARGET_HOME}/Library/WebKit/us.zoom.xos/"
-  echo "[✔] Cleared WebKit website data"
-fi
-
-# System-level Zoom cache
-if [ -d "${TARGET_HOME}/Library/Caches/us.zoom.xos/" ]; then
-  rm -rf "${TARGET_HOME}/Library/Caches/us.zoom.xos/"
-  echo "[✔] Cleared system cache"
-fi
+# Clear HTTP storage separately (handles both .binarycookies variant)
+rm -rf "${TARGET_HOME}/Library/HTTPStorages/us.zoom.xos.binarycookies" 2>/dev/null || true
 
 # Reopen Zoom
 echo "[*] Opening Zoom..."
