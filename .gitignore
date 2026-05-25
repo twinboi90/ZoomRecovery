@@ -19,7 +19,6 @@ zoomrecovery-dev
 Formula/
 
 # Scripts (kept local only)
-release.sh
 
 # Logs
 *.log
