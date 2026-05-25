@@ -30,15 +30,6 @@ else
   PARTIAL_MODE=false
 fi
 
-# Detect Wi-Fi interface
-WIFI_INTERFACE=$(networksetup -listallhardwareports | awk '/Wi-Fi|AirPort/{getline; print $2}')
-if [[ -z "$WIFI_INTERFACE" ]]; then
-  echo "[!] Could not detect a Wi-Fi interface. Exiting."
-  exit 1
-else
-  echo "[*] Detected Wi-Fi interface: $WIFI_INTERFACE"
-fi
-
 # Close Zoom if open
 osascript -e 'quit app "zoom.us"'
 sleep 2
