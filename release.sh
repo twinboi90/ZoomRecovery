@@ -17,7 +17,7 @@ cd /Users/drewbrowder/Documents/GitHub/ZoomRecovery
 # Commit and push any pending changes
 git add -A
 git commit -m "Release $VERSION" || echo "[*] Nothing new to commit"
-git pull --rebase
+git pull --rebase --autostash
 git push
 
 # Create and push release tag
@@ -66,7 +66,7 @@ EOF
 # Commit and push formula update
 git add Formula/zoomrecovery.rb
 git commit -m "Update zoomrecovery to $VERSION"
-git pull --rebase
+git pull --rebase --autostash
 git push
 
 # ── Update Homebrew locally ───────────────────────────────────────────────────
