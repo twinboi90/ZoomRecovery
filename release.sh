@@ -24,9 +24,15 @@ git push
 git tag "$VERSION"
 git push origin "$VERSION"
 
+# ── Create versioned copy of binary ──────────────────────────────────────────
+echo "[*] Preparing versioned binary..."
+cp zoomrecovery /tmp/zoomrecovery
+sed -i '' "s/VERSION_PLACEHOLDER/$VERSION/g" /tmp/zoomrecovery
+chmod 755 /tmp/zoomrecovery
+
 # ── Create GitHub Release with binary attached ────────────────────────────────
 echo "[*] Creating GitHub release and attaching binary..."
-gh release create "$VERSION" zoomrecovery \
+gh release create "$VERSION" /tmp/zoomrecovery#zoomrecovery \
   --title "$VERSION" \
   --notes "Release $VERSION"
 
