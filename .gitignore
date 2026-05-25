@@ -1,5 +1,25 @@
+# macOS
 .DS_Store
-zoomrecovery.bak
+.AppleDouble
+.LSOverride
+
+# Build artifacts
+build/
+*.pkg
 *.tar.gz
 zoomrecovery.tar.gz
+
+# Backup files
+zoomrecovery.bak*
+
+# Dev builds
+zoomrecovery-dev
+
+# Formula (managed in homebrew-tap repo)
+Formula/
+
+# Scripts (kept local only)
 release.sh
+
+# Logs
+*.log
