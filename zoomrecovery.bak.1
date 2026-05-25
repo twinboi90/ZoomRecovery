@@ -13,7 +13,7 @@ if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
 fi
 
 # Handle --version flag
-VERSION="VERSION_PLACEHOLDER"
+VERSION="v1.0.20"
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
   echo "zoomrecovery $VERSION"
   exit 0
@@ -39,8 +39,8 @@ else
   echo "[*] Detected Wi-Fi interface: $WIFI_INTERFACE"
 fi
 
-# Close Zoom if open
-osascript -e 'quit app "zoom.us"'
+# Close Zoom if open — hard kill all Zoom processes including helpers
+pkill -9 -f zoom 2>/dev/null || true
 sleep 2
 
 # Helper: renew DHCP on an interface
@@ -152,7 +152,7 @@ fi
 echo "Acting on user: $TARGET_USER"
 
 ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
-FILES=("*enc.db" "viper.ini")
+FILES=("*.enc.db" "viper.ini")
 
 # Enable nullglob so unmatched globs expand to nothing
 shopt -s nullglob
@@ -160,8 +160,35 @@ shopt -s nullglob
 for file in "${FILES[@]}"; do
   for match in "$ZOOMDATA"/$file; do
     if [ -f "$match" ]; then
+
+      # Check for immutable flag
+      IMMUTABLE=false
+      if ls -lO "$match" 2>/dev/null | awk '{print $5}' | grep -qw "uchg"; then
+        echo "[*] $match is locked (uchg); temporarily unlocking..."
+        chflags nouchg "$match"
+        IMMUTABLE=true
+      fi
+
+      # Save and fix permissions if not writable
+      ORIGINAL_PERMS=$(stat -f "%Lp" "$match")
+      if [ ! -w "$match" ]; then
+        echo "[*] $match is not writable (perms: $ORIGINAL_PERMS); temporarily fixing..."
+        chmod u+w "$match"
+      fi
+
+      # Wipe the file
       : > "$match"
-      echo "Wiped $match"
+      echo "[✔] Wiped $match"
+
+      # Restore permissions
+      chmod "$ORIGINAL_PERMS" "$match"
+
+      # Re-apply immutable flag if it was set
+      if $IMMUTABLE; then
+        chflags uchg "$match"
+        echo "[*] Re-applied lock on $match"
+      fi
+
     fi
   done
 done
