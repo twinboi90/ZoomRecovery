@@ -1,4 +1,14 @@
-# maintanence scripts
+# maintenance scripts
 build.sh
 install.sh
 release.sh
+
+# PyPI packaging
+pyproject.toml
+src/
+dist/
+*.egg-info/
+
+# build artifacts
+build/
+*.pkg

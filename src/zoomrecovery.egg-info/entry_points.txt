@@ -1,2 +1,0 @@
-[console_scripts]
-zoomrecovery = zoomrecovery.__main__:main

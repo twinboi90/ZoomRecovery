@@ -1,4 +1,0 @@
-#!/bin/bash
-chmod 755 /usr/local/bin/zoomrecovery
-chown root:wheel /usr/local/bin/zoomrecovery
-exit 0
