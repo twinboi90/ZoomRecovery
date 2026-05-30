@@ -1,0 +1,167 @@
+#!/bin/bash
+
+# Determine the intended user and home dir even when running via sudo
+TARGET_USER="${SUDO_USER:-$USER}"
+CONSOLE_USER="$(stat -f %Su /dev/console)"
+TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+export TARGET_USER TARGET_HOME
+
+# Fallback to the console session user if TARGET_HOME is empty or invalid
+if [ -z "${TARGET_HOME:-}" ] || [ ! -d "${TARGET_HOME}" ]; then
+  TARGET_USER="${CONSOLE_USER}"
+  TARGET_HOME="$(eval echo "~${CONSOLE_USER}")"
+fi
+
+# Handle --version flag
+VERSION="1.0.25"
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then
+  echo "zoomrecovery $VERSION"
+  exit 0
+fi
+
+# Escalate to root if needed
+if [[ $EUID -ne 0 ]]; then
+  if sudo -E -- "$0" "$@"; then
+    exit 0
+  fi
+  echo "[!] sudo failed; continuing with partial functionality (Zoom data cleanup)…"
+  PARTIAL_MODE=true
+else
+  PARTIAL_MODE=false
+fi
+
+# Close Zoom if open
+osascript -e 'quit app "zoom.us"'
+sleep 2
+
+# Helper: renew DHCP on an interface
+renew_dhcp() {
+  local ifc="$1"
+  networksetup -setdhcp "$ifc" >/dev/null 2>&1 || true
+  ipconfig set "$ifc" DHCP >/dev/null 2>&1 || true
+}
+
+# Helper: generate a valid locally-administered random MAC address
+random_mac() {
+  local suffix
+  suffix=$(openssl rand -hex 5 | sed 's/\(..\)/\1:/g; s/:$//')
+  echo "02:$suffix"
+}
+
+# ── MAC Spoofing ─────────────────────────────────────────────────────────────
+if [[ "$PARTIAL_MODE" = false ]]; then
+  echo "[*] Detecting active interfaces..."
+
+  # Active set via SystemConfiguration
+  ACTIVE_IFACES=($(scutil --nwi 2>/dev/null \
+    | awk '/Network interfaces in use:/{for(i=5;i<=NF;i++)print $i}' \
+    | tr ' ' '\n' | sort -u))
+
+  # Fallback: interfaces reporting status active with an ether addr
+  if [[ ${#ACTIVE_IFACES[@]} -eq 0 ]]; then
+    while read -r ifc; do
+      if ifconfig "$ifc" 2>/dev/null | grep -q "status: active" \
+        && ifconfig "$ifc" | awk '/ether/ {found=1} END{exit !found}'; then
+        ACTIVE_IFACES+=("$ifc")
+      fi
+    done < <(ifconfig -l | tr ' ' '\n')
+  fi
+
+  # Filter out virtual/loopback/tunnels
+  FILTERED_IFACES=()
+  for iface in "${ACTIVE_IFACES[@]}"; do
+    if [[ "$iface" == lo* || "$iface" == awdl* || "$iface" == utun* \
+       || "$iface" == llw* || "$iface" == bridge* || "$iface" == ap* \
+       || "$iface" == gif* || "$iface" == stf* ]]; then
+      echo "[*] Skipping virtual/loopback interface: $iface"
+      continue
+    fi
+    FILTERED_IFACES+=("$iface")
+  done
+
+  if [[ ${#FILTERED_IFACES[@]} -eq 0 ]]; then
+    echo "[!] No active physical interfaces detected; skipping MAC spoofing"
+  else
+    echo "[*] Active physical interfaces: ${FILTERED_IFACES[*]}"
+
+    for iface in "${FILTERED_IFACES[@]}"; do
+      CURRENT_MAC=$(ifconfig "$iface" 2>/dev/null | awk '/ether/ {print $2}')
+      if [[ -z "$CURRENT_MAC" ]]; then
+        echo "[*] Skipping $iface: no MAC address"
+        continue
+      fi
+      echo "[*] $iface is spoofable (Current MAC: $CURRENT_MAC)"
+
+      # Check if this is a Wi-Fi interface
+      IS_WIFI=false
+      if networksetup -listallhardwareports 2>/dev/null | awk -v ifc="$iface" '
+          $0 ~ /^Hardware Port: Wi-Fi$/ {wifi=1}
+          wifi && $0 ~ /^Device: / {dev=$2; if (dev==ifc) {print "yes"; exit}}
+        ' | grep -q yes; then
+        IS_WIFI=true
+      fi
+
+      # Power down the interface before changing MAC
+      if $IS_WIFI; then
+        echo "[*] Detected Wi-Fi interface ($iface); powering off Wi-Fi to change MAC"
+        networksetup -setairportpower "Wi-Fi" off >/dev/null 2>&1 || ifconfig "$iface" down || true
+      else
+        ifconfig "$iface" down || true
+      fi
+
+      # Spoof the MAC
+      NEW_MAC=$(random_mac)
+      echo "[*] Trying manual spoof: $NEW_MAC on $iface"
+      if ifconfig "$iface" ether "$NEW_MAC"; then
+        echo "[✔] Spoofed $iface → $NEW_MAC"
+        changed=true
+      else
+        echo "[✘] MAC spoof failed on $iface"
+        changed=false
+      fi
+
+      # Bring interface back up and renew DHCP
+      if [[ "$changed" == true ]]; then
+        if $IS_WIFI; then
+          echo "[*] Re-enabling Wi-Fi"
+          networksetup -setairportpower "Wi-Fi" on >/dev/null 2>&1 || ifconfig "$iface" up || true
+        else
+          ifconfig "$iface" up || true
+        fi
+        sleep 1
+        echo "[*] Renewing DHCP on $iface"
+        renew_dhcp "$iface"
+        sleep 1
+      else
+        ifconfig "$iface" up >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+fi
+
+# ── Zoom Data Wipe ───────────────────────────────────────────────────────────
+echo "Acting on user: $TARGET_USER"
+
+ZOOMDATA="${TARGET_HOME}/Library/Application Support/zoom.us/data"
+FILES=("*enc.db" "viper.ini")
+
+# Enable nullglob so unmatched globs expand to nothing
+shopt -s nullglob
+
+for file in "${FILES[@]}"; do
+  for match in "$ZOOMDATA"/$file; do
+    if [ -f "$match" ]; then
+      : > "$match"
+      echo "Wiped $match"
+    fi
+  done
+done
+
+# Restore default globbing behavior
+shopt -u nullglob
+
+# ── Reopen Zoom ──────────────────────────────────────────────────────────────
+echo "[*] Opening Zoom..."
+open -a "zoom.us"
+
+echo "[✔] Zoom recovery complete."
