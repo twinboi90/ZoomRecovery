@@ -1,0 +1,35 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write  # required for Trusted Publisher OIDC
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Sync version and script into package
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/zoomrecovery/__init__.py
+          cp zoomrecovery src/zoomrecovery/_script.sh
+
+      - name: Build
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,0 +1,11 @@
+LICENSE
+README.md
+pyproject.toml
+src/zoomrecovery/__init__.py
+src/zoomrecovery/__main__.py
+src/zoomrecovery/_script.sh
+src/zoomrecovery.egg-info/PKG-INFO
+src/zoomrecovery.egg-info/SOURCES.txt
+src/zoomrecovery.egg-info/dependency_links.txt
+src/zoomrecovery.egg-info/entry_points.txt
+src/zoomrecovery.egg-info/top_level.txt
