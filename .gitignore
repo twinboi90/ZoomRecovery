@@ -3,12 +3,11 @@ build.sh
 install.sh
 release.sh
 
-# PyPI packaging
-pyproject.toml
-src/
-dist/
-*.egg-info/
+# generated at build time
+.github/src/zoomrecovery/_script.sh
+.github/src/zoomrecovery.egg-info/
 
 # build artifacts
+dist/
 build/
 *.pkg
