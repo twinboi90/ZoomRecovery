@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "zoomrecovery"
 dynamic = ["version"]
 description = "Fix Zoom error 1132 by clearing corrupted database files and rotating MAC addresses"
-readme = "../README.md"
-license = { file = "../LICENSE" }
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.8"
 keywords = ["zoom", "error-1132", "mac-spoofing", "macos", "networking"]
 classifiers = [

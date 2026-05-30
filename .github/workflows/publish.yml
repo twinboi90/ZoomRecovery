@@ -28,6 +28,7 @@ jobs:
           f.write_text(re.sub(r'__version__ = .*', '__version__ = \"' + '$VERSION' + '\"', f.read_text()))
           "
           cp zoomrecovery .github/src/zoomrecovery/_script.sh
+          cp README.md LICENSE .github/
 
       - name: Build
         run: |
