@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push*)",
+            "statusMessage": "Scanning for secrets before push...",
+            "command": "OUTPUT=$(gitleaks git --no-banner \"$(git rev-parse --show-toplevel)\" 2>&1); EXIT=$?; if [ $EXIT -ne 0 ]; then echo \"$OUTPUT\" >&2; printf '{\"continue\":false,\"stopReason\":\"Push blocked: gitleaks detected secrets. Review findings and remove them before pushing.\"}'; exit 2; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
