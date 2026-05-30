@@ -52,4 +52,3 @@ Never ask about version numbers. Never ask for confirmation before releasing.
 - Same for `build.sh` and `install.sh`
 - PyPI Trusted Publisher is configured on pypi.org for `twinboi90/ZoomRecovery`, workflow `publish.yml`, environment `(Any)`
 - The private sync in `release.sh` uses `git clone . $TMP` (not worktrees — those hang in this environment)
-- `PIP_USER=0` is required for local Python builds due to a global pip config setting `user = true`
