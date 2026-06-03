@@ -1,4 +1,12 @@
 {
+  "extraKnownMarketplaces": {
+    "scientific-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "K-Dense-AI/scientific-agent-skills"
+      }
+    }
+  },
   "hooks": {
     "PreToolUse": [
       {
