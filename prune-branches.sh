@@ -2,11 +2,32 @@
 
 # Prune feature branches from public repo and relocate to private repo
 # Usage: ./prune-branches.sh
+#
+# Prerequisites:
+#   - SSH keys configured for GitHub, OR
+#   - gh CLI authenticated: gh auth login
+#   - Private remote configured: git remote add private <url>
 
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_DIR"
+
+# Check authentication
+echo "🔐 Checking GitHub authentication..."
+if ! gh auth status > /dev/null 2>&1; then
+  echo "❌ Error: gh CLI not authenticated"
+  echo ""
+  echo "Please authenticate with:"
+  echo "  gh auth login"
+  echo ""
+  echo "Or set up SSH keys and update remotes to use SSH URLs:"
+  echo "  git remote set-url origin git@github.com:twinboi90/ZoomRecovery.git"
+  echo "  git remote set-url private git@github.com:twinboi90/ZoomRecovery-dev.git"
+  exit 1
+fi
+echo "✅ GitHub authentication valid"
+echo ""
 
 # Branches to relocate
 BRANCHES=(
