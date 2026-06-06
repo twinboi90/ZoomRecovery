@@ -11,3 +11,17 @@ release.sh
 dist/
 build/
 *.pkg
+*.tar.gz
+
+# macOS
+.DS_Store
+
+# generated docs (never commit)
+IMPLEMENTATION_SUMMARY.md
+SCRIPT_ERROR_ANALYSIS.md
+TESTING_GUIDE.md
+VERSION_COMPATIBILITY_ANALYSIS.md
+
+# local subdirectories
+Claude/
+Formula/.gitignore.save
