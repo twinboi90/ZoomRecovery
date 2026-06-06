@@ -1,4 +1,27 @@
 {
+  "permissions": {
+    "allow": [
+      "Read(/Users/drewbrowder/.claude/CLAUDE.md)",
+      "Edit(/Users/drewbrowder/.claude/CLAUDE.md)",
+      "Read(/Users/drewbrowder/pi-router/*)",
+      "Bash(defaults read *)",
+      "Bash(ping *)",
+      "Bash(arp *)",
+      "Bash(diskutil info *)",
+      "Bash(diskutil list *)",
+      "Bash(nc -zv *)",
+      "Bash(brew list *)",
+      "Bash(dig *)",
+      "Bash(bd prime)",
+      "Bash(bd ready)",
+      "Bash(bd show *)",
+      "Bash(bd list *)",
+      "Bash(bd stats)",
+      "Bash(bd memories *)",
+      "Bash(bd search *)",
+      "Bash(bd blocked)"
+    ]
+  },
   "hooks": {
     "PreCompact": [
       {
